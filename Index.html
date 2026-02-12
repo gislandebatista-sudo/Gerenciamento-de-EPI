@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard EPIs - Gestão Integrada</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        deepBg: '#130e2e',   
+                        cardBg: '#1f1642',   
+                        neonPink: '#ec4899', 
+                        neonOrange: '#f97316',
+                        neonBlue: '#3b82f6',
+                        neonPurple: '#a855f7'
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        html { scroll-behavior: smooth; }
+        body { background-color: #130e2e; color: #f3f4f6; overflow-x: hidden; }
+        
+        .glass-panel {
+            background: rgba(31, 22, 66, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .filter-select {
+            background-color: rgba(19, 14, 46, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #e5e7eb;
+            font-size: 0.875rem;
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            width: 100%;
+            transition: all 0.3s;
+        }
+        .filter-select:focus {
+            outline: none;
+            border-color: #ec4899;
+            box-shadow: 0 0 10px rgba(236, 72, 153, 0.2);
+        }
+        
+        /* Classe para ocultar valores (efeito blur) */
+        .blur-value {
+            filter: blur(5px);
+            user-select: none;
+            transition: filter 0.3s ease;
+        }
+        
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: #130e2e; }
+        ::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: #ec4899; }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col selection:bg-neonPink selection:text-white">
+
+    <header class="w-full p-4 border-b border-white/10 glass-panel sticky top-0 z-50 flex justify-between items-center h-16 shadow-lg">
+        <div class="flex items-center gap-3">
+            <div class="bg-neonPink/20 p-2 rounded-lg">
+                <i class="fa-solid fa-helmet-safety text-neonPink text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-wide text-white leading-tight">GESTÃO DE EPI'S</h1>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest">Painel Executivo</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <div id="last-sync-time" class="text-[10px] text-gray-400 font-mono hidden sm:block border-r border-white/10 pr-3 mr-1">
+                Sincronizado: --:--
+            </div>
+
+            <button onclick="togglePrivacy()" class="p-2 rounded-full hover:bg-white/10 transition text-gray-400 w-10 h-10 flex items-center justify-center" title="Ocultar Valores">
+                <i id="eye-icon" class="fa-solid fa-eye"></i>
+            </button>
+
+            <div id="status-badge" class="flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-500 text-xs font-bold border border-yellow-500/30">
+                <i class="fa-solid fa-circle-notch fa-spin"></i>
+            </div>
+
+            <button onclick="forceUpdate()" class="p-2 rounded-full hover:bg-white/10 transition text-gray-400" title="Forçar Atualização">
+                <i class="fa-solid fa-sync"></i>
+            </button>
+        </div>
+    </header>
+
+    <section class="w-full max-w-[1920px] mx-auto px-4 sm:px-6 pt-6 pb-2">
+        <div class="glass-panel p-4 rounded-xl flex flex-col lg:flex-row gap-4 items-end lg:items-center justify-between">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-gray-400 uppercase font-bold ml-1">Contrato</label>
+                    <select id="filter-contrato" class="filter-select" onchange="applyFilters()"><option value="">Todos</option></select>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-gray-400 uppercase font-bold ml-1">Ano</label>
+                    <select id="filter-ano" class="filter-select" onchange="applyFilters()"><option value="">Todos</option></select>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-gray-400 uppercase font-bold ml-1">Mês</label>
+                    <select id="filter-mes" class="filter-select" onchange="applyFilters()"><option value="">Todos</option></select>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-gray-400 uppercase font-bold ml-1">Equipamento</label>
+                    <select id="filter-equipamento" class="filter-select" onchange="applyFilters()"><option value="">Todos</option></select>
+                </div>
+            </div>
+            <button onclick="clearFilters()" class="w-full lg:w-auto px-6 py-2 bg-red-500/10 hover:bg-red-500/30 border border-red-500/30 text-red-500 rounded-lg text-sm font-bold transition flex items-center justify-center gap-2 h-[38px] mt-4 lg:mt-0">
+                <i class="fa-solid fa-filter-circle-xmark"></i> Limpar
+            </button>
+        </div>
+    </section>
+
+    <main class="flex-1 p-4 sm:p-6 w-full max-w-[1920px] mx-auto space-y-6 mb-10">
+        
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div class="glass-panel p-4 rounded-xl border-l-4 border-neonPink relative group hover:translate-y-[-2px] transition-transform">
+                <h3 class="text-[10px] font-bold uppercase text-gray-400">Total - CELPE</h3>
+                <p class="text-2xl font-bold text-white mt-1 kpi-value" id="kpi-celpe" data-val="0">R$ -</p>
+                <i class="fa-solid fa-bolt absolute right-2 bottom-2 text-neonPink/10 text-5xl group-hover:text-neonPink/20 transition"></i>
+            </div>
+            <div class="glass-panel p-4 rounded-xl border-l-4 border-neonPink relative group hover:translate-y-[-2px] transition-transform">
+                <h3 class="text-[10px] font-bold uppercase text-gray-400">Total - ENERGISA</h3>
+                <p class="text-2xl font-bold text-white mt-1 kpi-value" id="kpi-energisa" data-val="0">R$ -</p>
+                <i class="fa-solid fa-industry absolute right-2 bottom-2 text-neonPink/10 text-5xl group-hover:text-neonPink/20 transition"></i>
+            </div>
+            <div class="glass-panel p-4 rounded-xl border-l-4 border-neonBlue relative group hover:translate-y-[-2px] transition-transform">
+                <h3 class="text-[10px] font-bold uppercase text-gray-400">Total - ENERGISA PB</h3>
+                <p class="text-2xl font-bold text-white mt-1 kpi-value" id="kpi-energisa-pb" data-val="0">R$ -</p>
+                <i class="fa-solid fa-city absolute right-2 bottom-2 text-neonBlue/10 text-5xl group-hover:text-neonBlue/20 transition"></i>
+            </div>
+            <div class="glass-panel p-4 rounded-xl border-l-4 border-red-500 relative group hover:translate-y-[-2px] transition-transform">
+                <h3 class="text-[10px] font-bold uppercase text-gray-400">Total - EQUATORIAL</h3>
+                <p class="text-2xl font-bold text-white mt-1 kpi-value" id="kpi-equatorial" data-val="0">R$ -</p>
+                <i class="fa-solid fa-broadcast-tower absolute right-2 bottom-2 text-red-500/10 text-5xl group-hover:text-red-500/20 transition"></i>
+            </div>
+            <div class="glass-panel p-4 rounded-xl border-l-4 border-purple-500 relative group hover:translate-y-[-2px] transition-transform">
+                <h3 class="text-[10px] font-bold uppercase text-gray-400">Total - GLUX</h3>
+                <p class="text-2xl font-bold text-white mt-1 kpi-value" id="kpi-glux" data-val="0">R$ -</p>
+                <i class="fa-solid fa-plug absolute right-2 bottom-2 text-purple-500/10 text-5xl group-hover:text-purple-500/20 transition"></i>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-8 glass-panel p-5 rounded-2xl flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-white">Custos Totais (Mensal)</h3>
+                    <div class="flex gap-2">
+                        <span class="flex items-center gap-1 text-[10px] text-gray-400"><span class="w-2 h-2 rounded-full bg-neonPink"></span> Reposição</span>
+                        <span class="flex items-center gap-1 text-[10px] text-gray-400"><span class="w-2 h-2 rounded-full bg-neonBlue"></span> 1ª Compra</span>
+                    </div>
+                </div>
+                <div class="flex-1 relative w-full h-[300px]"><canvas id="chartCustos"></canvas></div>
+            </div>
+            <div class="lg:col-span-4 glass-panel p-5 rounded-2xl flex flex-col">
+                <h3 class="font-bold text-white mb-2 text-center">Aquisições x Contrato</h3>
+                <div class="flex-1 relative flex justify-center items-center h-[300px]"><canvas id="chartContratos"></canvas></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-5 glass-panel p-5 rounded-2xl">
+                <h3 class="font-bold text-white mb-4">Top 10 Itens (Qtd)</h3>
+                <div class="h-[350px] relative w-full"><canvas id="chartTop10"></canvas></div>
+            </div>
+            <div class="lg:col-span-7 flex flex-col gap-6">
+                <div class="glass-panel p-5 rounded-2xl h-1/2">
+                    <h3 class="font-bold text-white mb-2">Evolução de Compras</h3>
+                    <div class="h-[150px] relative w-full"><canvas id="chartEvolucao"></canvas></div>
+                </div>
+                <div class="glass-panel p-5 rounded-2xl h-1/2 flex items-center justify-between gap-4">
+                    <div class="w-1/2 h-full relative">
+                        <h3 class="font-bold text-xs text-gray-300 absolute top-0">Meta Duração (>180 dias)</h3>
+                        <div class="h-full pt-4"><canvas id="chartMeta"></canvas></div>
+                    </div>
+                    <div class="w-1/2 bg-[#130e2e] rounded-xl p-4 border border-white/5 flex flex-col justify-center items-center shadow-inner">
+                        <span class="text-gray-500 text-[10px] uppercase tracking-widest mb-1">Taxa de Sucesso</span>
+                        <span class="text-4xl font-black text-white" id="meta-percentual">--%</span>
+                        <div class="w-full bg-gray-700 h-1 mt-2 rounded-full overflow-hidden">
+                            <div id="meta-bar" class="bg-neonBlue h-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-panel p-5 rounded-2xl">
+            <h3 class="font-bold text-white mb-4">Média Histórica (Dias de Uso)</h3>
+            <div class="h-[300px] relative w-full"><canvas id="chartHistorico"></canvas></div>
+        </div>
+
+    </main>
+
+    <script>
+        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR56fYizUrE-Xy-6wJJL0LQspVr6qrJn40fXY3t7w7jUwsDqXwasiIbleMfAfHGtg/pub?output=csv';
+        const PROXY_URL = 'https://corsproxy.io/?' + encodeURIComponent(SHEET_URL);
+
+        let myCharts = {};
+        let globalData = [];
+        let privacyMode = false; // Estado do botão de privacidade
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchData();
+        });
+
+        function forceUpdate() {
+            fetchData();
+        }
+
+        // --- FETCH DADOS ---
+        function fetchData() {
+            updateStatus('loading');
+            
+            fetch(PROXY_URL)
+                .then(response => {
+                    if (!response.ok) throw new Error("Erro na rede");
+                    return response.text();
+                })
+                .then(csvText => {
+                    Papa.parse(csvText, {
+                        header: false,
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            if(results.data && results.data.length > 1) {
+                                globalData = results.data.slice(1);
+                                populateFilterOptions(globalData);
+                                applyFilters(); 
+                                updateStatus('success');
+                            } else {
+                                updateStatus('error', 'Planilha Vazia');
+                            }
+                        }
+                    });
+                })
+                .catch(err => {
+                    console.error("Falha na conexão:", err);
+                    updateStatus('error', 'Erro Conexão');
+                });
+        }
+
+        function updateStatus(state, msg) {
+            const el = document.getElementById('status-badge');
+            const syncEl = document.getElementById('last-sync-time');
+            const now = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+
+            if(state === 'loading') {
+                el.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/20 text-yellow-500 text-xs font-bold border border-yellow-500/30";
+                el.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
+            } else if (state === 'success') {
+                el.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/20 text-green-400 text-xs font-bold border border-green-500/30";
+                el.innerHTML = '<i class="fa-solid fa-wifi"></i> ONLINE';
+                syncEl.innerText = `Sincronizado: ${now}`;
+            } else {
+                el.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 text-red-500 text-xs font-bold border border-red-500/30";
+                el.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>`;
+            }
+        }
+
+        // --- PRIVACIDADE (Botão Olho) ---
+        function togglePrivacy() {
+            privacyMode = !privacyMode;
+            
+            // Alterna ícone
+            const icon = document.getElementById('eye-icon');
+            if(privacyMode) {
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+
+            // Atualiza KPIs
+            applyPrivacyToKPIs();
+            
+            // Atualiza Gráfico de Custos (para esconder tooltips/eixo)
+            applyFilters(); 
+        }
+
+        function applyPrivacyToKPIs() {
+            const kpis = document.querySelectorAll('.kpi-value');
+            kpis.forEach(el => {
+                const val = parseFloat(el.getAttribute('data-val'));
+                if(privacyMode) {
+                    el.innerText = 'R$ - - - -';
+                    el.classList.add('blur-sm'); // Adiciona leve blur
+                } else {
+                    el.innerText = val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+                    el.classList.remove('blur-sm');
+                }
+            });
+        }
+
+        // --- LÓGICA DE FILTROS ---
+        function getRawDateParts(row) {
+            const dateStr = getVal(row, 0);
+            const parts = dateStr.split('/');
+            return { day: parts[0], month: parts[1], year: parts[2] };
+        }
+
+        function getMonthName(numStr) {
+            const months = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+            return months[parseInt(numStr) - 1] || numStr;
+        }
+
+        function populateFilterOptions(data) {
+            const sels = {
+                contrato: document.getElementById('filter-contrato'),
+                ano: document.getElementById('filter-ano'),
+                mes: document.getElementById('filter-mes'),
+                equip: document.getElementById('filter-equipamento')
+            };
+
+            const selectedValues = {
+                contrato: sels.contrato.value,
+                ano: sels.ano.value,
+                mes: sels.mes.value,
+                equip: sels.equip.value
+            };
+
+            const uniqueContratos = new Set();
+            const uniqueAnos = new Set();
+            const uniqueMeses = new Set();
+            const uniqueEquip = new Set();
+
+            data.forEach(row => {
+                const c = getVal(row, 1);
+                const e = getVal(row, 2);
+                const d = getRawDateParts(row);
+                if(c) uniqueContratos.add(c);
+                if(e) uniqueEquip.add(e);
+                if(d.year) uniqueAnos.add(d.year);
+                if(d.month) uniqueMeses.add(d.month);
+            });
+
+            const fillSelect = (selectEl, valuesSet, currentValue, labelFormatter = x=>x) => {
+                selectEl.innerHTML = '<option value="">Todos</option>';
+                const sorted = Array.from(valuesSet).sort();
+                sorted.forEach(val => {
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.text = labelFormatter(val);
+                    if(val === currentValue) opt.selected = true;
+                    selectEl.appendChild(opt);
+                });
+            };
+
+            fillSelect(sels.contrato, uniqueContratos, selectedValues.contrato);
+            fillSelect(sels.ano, uniqueAnos, selectedValues.ano);
+            fillSelect(sels.mes, uniqueMeses, selectedValues.mes, (m) => getMonthName(m));
+            fillSelect(sels.equip, uniqueEquip, selectedValues.equip);
+        }
+
+        function applyFilters() {
+            const fContrato = document.getElementById('filter-contrato').value.toLowerCase();
+            const fAno = document.getElementById('filter-ano').value;
+            const fMes = document.getElementById('filter-mes').value;
+            const fEquip = document.getElementById('filter-equipamento').value.toLowerCase();
+
+            const filteredData = globalData.filter(row => {
+                const c = getVal(row, 1).toLowerCase();
+                const e = getVal(row, 2).toLowerCase();
+                const d = getRawDateParts(row);
+
+                const matchContrato = !fContrato || c.includes(fContrato);
+                const matchEquip = !fEquip || e.includes(fEquip);
+                const matchAno = !fAno || d.year === fAno;
+                const matchMes = !fMes || d.month === fMes;
+
+                return matchContrato && matchEquip && matchAno && matchMes;
+            });
+
+            processData(filteredData);
+            updateCascadingOptions(filteredData);
+        }
+
+        function updateCascadingOptions(currentData) {
+            const getUnique = (idx) => new Set(currentData.map(r => getVal(r, idx)));
+            const uniqueEquips = getUnique(2);
+            const sels = { equip: document.getElementById('filter-equipamento') };
+            const currEquip = sels.equip.value;
+            
+            sels.equip.innerHTML = '<option value="">Todos</option>';
+            Array.from(uniqueEquips).sort().forEach(e => {
+                if(!e) return;
+                const opt = document.createElement('option');
+                opt.value = e;
+                opt.text = e;
+                sels.equip.appendChild(opt);
+            });
+            sels.equip.value = uniqueEquips.has(currEquip) ? currEquip : "";
+        }
+
+        function clearFilters() {
+            document.getElementById('filter-contrato').value = "";
+            document.getElementById('filter-ano').value = "";
+            document.getElementById('filter-mes').value = "";
+            document.getElementById('filter-equipamento').value = "";
+            populateFilterOptions(globalData);
+            applyFilters();
+        }
+
+        // --- DADOS E PROCESSAMENTO ---
+        function getVal(row, colIndex) {
+            return row[colIndex] ? row[colIndex].trim() : "";
+        }
+
+        function processData(rows) {
+            const parseMoney = (val) => {
+                if(!val) return 0;
+                let clean = val.replace('R$', '').replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+                return parseFloat(clean) || 0;
+            };
+            const parseDateMonth = (val) => {
+                if(!val) return 'N/D';
+                const parts = val.split('/'); 
+                if(parts.length >= 2) {
+                    const m = parseInt(parts[1]) - 1;
+                    const months = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+                    return months[m] || 'N/D';
+                }
+                return 'N/D';
+            };
+
+            let kpis = { CELPE:0, ENERGISA:0, ENERGISA_PB:0, EQUATORIAL:0, GLUX:0 };
+            let custosMes = {}; 
+            let contratosCount = {};
+            let itensCount = {};
+            let evolucao = {};
+            let meta = { ok: 0, not: 0 };
+            let histSum = {}, histCount = {};
+            let allMonths = new Set();
+            let allStatus = new Set();
+
+            rows.forEach(row => {
+                const data = getVal(row, 0);
+                const contrato = getVal(row, 1).toUpperCase();
+                const item = getVal(row, 2);
+                const qtd = parseFloat(getVal(row, 7).replace(',', '.')) || 0;
+                const total = parseMoney(getVal(row, 8));
+                const status = getVal(row, 9) || "Outros";
+                const diasStr = getVal(row, 12);
+
+                if(contrato.includes("CELPE")) kpis.CELPE += total;
+                else if(contrato.includes("ENERGISA") && contrato.includes("PB")) kpis.ENERGISA_PB += total;
+                else if(contrato.includes("ENERGISA")) kpis.ENERGISA += total;
+                else if(contrato.includes("EQUATORIAL")) kpis.EQUATORIAL += total;
+                else if(contrato.includes("GLUX")) kpis.GLUX += total;
+
+                const mes = parseDateMonth(data);
+                if(mes !== 'N/D') {
+                    if(!custosMes[mes]) custosMes[mes] = {};
+                    if(!custosMes[mes][status]) custosMes[mes][status] = 0;
+                    custosMes[mes][status] += total;
+                    allMonths.add(mes);
+                    allStatus.add(status);
+                    evolucao[mes] = (evolucao[mes] || 0) + qtd;
+                }
+
+                let cShort = contrato.length > 15 ? contrato.substring(0,15)+"..." : contrato;
+                if(cShort) contratosCount[cShort] = (contratosCount[cShort] || 0) + 1;
+                if(item) itensCount[item] = (itensCount[item] || 0) + qtd;
+
+                if(diasStr) {
+                    const dias = parseFloat(diasStr);
+                    if(!isNaN(dias)) {
+                        if(dias >= 180) meta.ok++; else meta.not++;
+                        if(item) {
+                            histSum[item] = (histSum[item] || 0) + dias;
+                            histCount[item] = (histCount[item] || 0) + 1;
+                        }
+                    }
+                }
+            });
+
+            // Atualiza KPIs no DOM (armazenando valor real no data-val)
+            const updateKpi = (id, val) => {
+                const el = document.getElementById(id);
+                el.setAttribute('data-val', val);
+            };
+            updateKpi('kpi-celpe', kpis.CELPE);
+            updateKpi('kpi-energisa', kpis.ENERGISA);
+            updateKpi('kpi-energisa-pb', kpis.ENERGISA_PB);
+            updateKpi('kpi-equatorial', kpis.EQUATORIAL);
+            updateKpi('kpi-glux', kpis.GLUX);
+            
+            // Aplica estado visual (texto ou blur)
+            applyPrivacyToKPIs();
+
+            // Ordenação
+            const monthsOrder = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+            const sortedMonths = Array.from(allMonths).sort((a,b) => monthsOrder.indexOf(a) - monthsOrder.indexOf(b));
+
+            // -- GRÁFICOS --
+            
+            // Custos (Com formatação R$)
+            const datasetsCustos = Array.from(allStatus).map((st, i) => {
+                const colors = ['#ec4899', '#3b82f6', '#f97316', '#a855f7'];
+                return {
+                    label: st,
+                    data: sortedMonths.map(m => custosMes[m][st] || 0),
+                    backgroundColor: colors[i % colors.length],
+                    borderRadius: 4
+                };
+            });
+            
+            // Configuração Específica para Moeda no Gráfico de Custos
+            renderChart('chartCustos', 'bar', sortedMonths, datasetsCustos, {
+                stacked: false,
+                scales: {
+                    y: {
+                        ticks: {
+                            color: '#6b7280',
+                            callback: function(value) {
+                                return privacyMode ? '****' : value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', maximumSignificantDigits: 3});
+                            }
+                        },
+                        grid: { color: 'rgba(255,255,255,0.03)' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed.y !== null) {
+                                    label += privacyMode ? 'R$ ****' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Contratos
+            const sortedContratos = Object.keys(contratosCount).sort((a,b) => contratosCount[b] - contratosCount[a]);
+            renderChart('chartContratos', 'doughnut', sortedContratos, [{
+                data: sortedContratos.map(k => contratosCount[k]),
+                backgroundColor: ['#ec4899', '#3b82f6', '#f97316', '#a855f7', '#10b981'],
+                borderWidth: 0
+            }]);
+
+            // Top 10
+            const sortedItens = Object.entries(itensCount).sort((a,b) => b[1] - a[1]).slice(0, 10);
+            renderChart('chartTop10', 'bar', sortedItens.map(x=>x[0]), [{
+                label: 'Quantidade',
+                data: sortedItens.map(x=>x[1]),
+                backgroundColor: '#ec4899',
+                borderRadius: 3,
+                barThickness: 15
+            }], {indexAxis: 'y'});
+
+            // Evolução
+            renderChart('chartEvolucao', 'line', sortedMonths, [{
+                label: 'Volume de Compras',
+                data: sortedMonths.map(m => evolucao[m] || 0),
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]);
+
+            // Meta
+            const totalMeta = meta.ok + meta.not;
+            const percMeta = totalMeta > 0 ? Math.round((meta.ok / totalMeta) * 100) : 0;
+            document.getElementById('meta-percentual').innerText = percMeta + "%";
+            document.getElementById('meta-bar').style.width = percMeta + "%";
+            renderChart('chartMeta', 'pie', ['Meta Atingida', 'Abaixo da Meta'], [{
+                data: [meta.ok, meta.not],
+                backgroundColor: ['#3b82f6', '#f97316'],
+                borderWidth: 0
+            }]);
+
+            // Historico
+            const sortedHist = Object.keys(histSum)
+                .map(k => ({ item: k, avg: Math.round(histSum[k]/histCount[k]) }))
+                .sort((a,b) => b.avg - a.avg)
+                .slice(0, 20);
+            
+            const ctxHist = document.getElementById('chartHistorico').getContext('2d');
+            const grad = ctxHist.createLinearGradient(0,200,0,0);
+            grad.addColorStop(0, '#ec4899'); grad.addColorStop(1, '#a855f7');
+
+            renderChart('chartHistorico', 'bar', sortedHist.map(x=>x.item), [{
+                label: 'Dias de Uso (Média)',
+                data: sortedHist.map(x=>x.avg),
+                backgroundColor: grad,
+                borderRadius: 4
+            }]);
+        }
+
+        function renderChart(id, type, labels, datasets, opts={}) {
+            const ctx = document.getElementById(id).getContext('2d');
+            if (myCharts[id]) myCharts[id].destroy();
+
+            // Configuração Padrão mesclada com opts customizados
+            const defaultOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#9ca3af', font:{size:10}, boxWidth: 10 }, position: 'bottom' },
+                    tooltip: { backgroundColor: '#1f1642', titleColor: '#fff', bodyColor: '#ccc', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1 }
+                },
+                scales: (type !== 'pie' && type !== 'doughnut') ? {
+                    x: { 
+                        ticks: { color: '#6b7280', maxRotation: 45, minRotation: 0 }, 
+                        grid: { display: false },
+                        ...opts.indexAxis === 'y' ? {} : {}
+                    },
+                    y: { 
+                        ticks: { color: '#6b7280' }, 
+                        grid: { color: 'rgba(255,255,255,0.03)' },
+                        beginAtZero: true
+                    }
+                } : { x: { display: false }, y: { display: false } }
+            };
+
+            // Merge inteligente (se opts tiver scales/plugins, usa os de lá, senão usa default)
+            const finalOptions = {
+                ...defaultOptions,
+                ...opts,
+                scales: opts.scales || defaultOptions.scales,
+                plugins: { ...defaultOptions.plugins, ...opts.plugins }
+            };
+
+            myCharts[id] = new Chart(ctx, {
+                type: type,
+                data: { labels, datasets },
+                options: finalOptions
+            });
+        }
+    </script>
+</body>
+</html>
