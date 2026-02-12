@@ -101,7 +101,7 @@
 
     <section class="w-full max-w-[1920px] mx-auto px-4 sm:px-6 pt-6 pb-2">
         <div class="glass-panel p-4 rounded-xl flex flex-col lg:flex-row gap-4 items-end lg:items-center justify-between">
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 w-full">
                 <div class="flex flex-col gap-1">
                     <label class="text-xs text-gray-400 uppercase font-bold ml-1">Contrato</label>
                     <select id="filter-contrato" class="filter-select" onchange="applyFilters()"><option value="">Todos</option></select>
@@ -113,6 +113,10 @@
                 <div class="flex flex-col gap-1">
                     <label class="text-xs text-gray-400 uppercase font-bold ml-1">Mês</label>
                     <select id="filter-mes" class="filter-select" onchange="applyFilters()"><option value="">Todos</option></select>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="text-xs text-gray-400 uppercase font-bold ml-1">Colaborador</label>
+                    <select id="filter-colaborador" class="filter-select" onchange="applyFilters()"><option value="">Todos</option></select>
                 </div>
                 <div class="flex flex-col gap-1">
                     <label class="text-xs text-gray-400 uppercase font-bold ml-1">Equipamento</label>
@@ -322,6 +326,7 @@
                 contrato: document.getElementById('filter-contrato'),
                 ano: document.getElementById('filter-ano'),
                 mes: document.getElementById('filter-mes'),
+                colab: document.getElementById('filter-colaborador'), // NOVO
                 equip: document.getElementById('filter-equipamento')
             };
 
@@ -329,20 +334,25 @@
                 contrato: sels.contrato.value,
                 ano: sels.ano.value,
                 mes: sels.mes.value,
+                colab: sels.colab.value, // NOVO
                 equip: sels.equip.value
             };
 
             const uniqueContratos = new Set();
             const uniqueAnos = new Set();
             const uniqueMeses = new Set();
+            const uniqueColabs = new Set(); // NOVO
             const uniqueEquip = new Set();
 
             data.forEach(row => {
                 const c = getVal(row, 1);
                 const e = getVal(row, 2);
+                const col = getVal(row, 3); // Índice 3 = Coluna D (Colaborador)
                 const d = getRawDateParts(row);
+                
                 if(c) uniqueContratos.add(c);
                 if(e) uniqueEquip.add(e);
+                if(col) uniqueColabs.add(col); // NOVO
                 if(d.year) uniqueAnos.add(d.year);
                 if(d.month) uniqueMeses.add(d.month);
             });
@@ -362,6 +372,7 @@
             fillSelect(sels.contrato, uniqueContratos, selectedValues.contrato);
             fillSelect(sels.ano, uniqueAnos, selectedValues.ano);
             fillSelect(sels.mes, uniqueMeses, selectedValues.mes, (m) => getMonthName(m));
+            fillSelect(sels.colab, uniqueColabs, selectedValues.colab); // NOVO
             fillSelect(sels.equip, uniqueEquip, selectedValues.equip);
         }
 
@@ -369,19 +380,22 @@
             const fContrato = document.getElementById('filter-contrato').value.toLowerCase();
             const fAno = document.getElementById('filter-ano').value;
             const fMes = document.getElementById('filter-mes').value;
+            const fColab = document.getElementById('filter-colaborador').value.toLowerCase(); // NOVO
             const fEquip = document.getElementById('filter-equipamento').value.toLowerCase();
 
             const filteredData = globalData.filter(row => {
                 const c = getVal(row, 1).toLowerCase();
                 const e = getVal(row, 2).toLowerCase();
+                const col = getVal(row, 3).toLowerCase(); // Índice 3 = Coluna D
                 const d = getRawDateParts(row);
 
                 const matchContrato = !fContrato || c.includes(fContrato);
                 const matchEquip = !fEquip || e.includes(fEquip);
+                const matchColab = !fColab || col.includes(fColab); // NOVO
                 const matchAno = !fAno || d.year === fAno;
                 const matchMes = !fMes || d.month === fMes;
 
-                return matchContrato && matchEquip && matchAno && matchMes;
+                return matchContrato && matchEquip && matchColab && matchAno && matchMes;
             });
 
             processData(filteredData);
@@ -389,26 +403,34 @@
         }
 
         function updateCascadingOptions(currentData) {
-            const getUnique = (idx) => new Set(currentData.map(r => getVal(r, idx)));
-            const uniqueEquips = getUnique(2);
-            const sels = { equip: document.getElementById('filter-equipamento') };
-            const currEquip = sels.equip.value;
-            
-            sels.equip.innerHTML = '<option value="">Todos</option>';
-            Array.from(uniqueEquips).sort().forEach(e => {
-                if(!e) return;
-                const opt = document.createElement('option');
-                opt.value = e;
-                opt.text = e;
-                sels.equip.appendChild(opt);
-            });
-            sels.equip.value = uniqueEquips.has(currEquip) ? currEquip : "";
+            // Helper para atualizar dropdowns baseados nos dados filtrados
+            const updateSelect = (id, colIndex) => {
+                const sel = document.getElementById(id);
+                const currVal = sel.value;
+                const uniqueVals = new Set(currentData.map(r => getVal(r, colIndex)));
+                
+                sel.innerHTML = '<option value="">Todos</option>';
+                Array.from(uniqueVals).sort().forEach(v => {
+                    if(!v) return;
+                    const opt = document.createElement('option');
+                    opt.value = v;
+                    opt.text = v;
+                    sel.appendChild(opt);
+                });
+                // Mantém valor selecionado se ainda for válido
+                sel.value = uniqueVals.has(currVal) ? currVal : "";
+            };
+
+            // Atualiza Equipamento (Col 2) e Colaborador (Col 3) em cascata
+            updateSelect('filter-equipamento', 2);
+            updateSelect('filter-colaborador', 3);
         }
 
         function clearFilters() {
             document.getElementById('filter-contrato').value = "";
             document.getElementById('filter-ano').value = "";
             document.getElementById('filter-mes').value = "";
+            document.getElementById('filter-colaborador').value = ""; // NOVO
             document.getElementById('filter-equipamento').value = "";
             populateFilterOptions(globalData);
             applyFilters();
