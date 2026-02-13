@@ -22,7 +22,8 @@
                         neonPink: '#ec4899', 
                         neonOrange: '#f97316',
                         neonBlue: '#3b82f6',
-                        neonPurple: '#a855f7'
+                        neonPurple: '#a855f7',
+                        neonGreen: '#10b981' 
                     },
                     fontFamily: { sans: ['Inter', 'sans-serif'] }
                 }
@@ -156,7 +157,29 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="mt-4">
+            <h3 class="text-xs text-gray-400 uppercase font-bold mb-2 ml-1">Saldo de Orçamento Disponível (Mês/Filtro)</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="glass-panel p-4 rounded-xl border-l-4 border-neonGreen relative group hover:translate-y-[-2px] transition-transform">
+                    <h3 class="text-[10px] font-bold uppercase text-gray-400">Saldo - CELPE PE</h3>
+                    <div class="flex items-baseline gap-2">
+                        <p class="text-2xl font-bold text-emerald-400 mt-1 kpi-value" id="kpi-orcamento-celpe" data-val="0">R$ -</p>
+                        <span class="text-[10px] text-gray-500">(Meta: 3k/mês)</span>
+                    </div>
+                    <i class="fa-solid fa-sack-dollar absolute right-2 bottom-2 text-neonGreen/10 text-5xl group-hover:text-neonGreen/20 transition"></i>
+                </div>
+                <div class="glass-panel p-4 rounded-xl border-l-4 border-neonGreen relative group hover:translate-y-[-2px] transition-transform">
+                    <h3 class="text-[10px] font-bold uppercase text-gray-400">Saldo - ENERGISA MG/RJ</h3>
+                    <div class="flex items-baseline gap-2">
+                        <p class="text-2xl font-bold text-emerald-400 mt-1 kpi-value" id="kpi-orcamento-energisa" data-val="0">R$ -</p>
+                        <span class="text-[10px] text-gray-500">(Meta: 2.4k/mês)</span>
+                    </div>
+                    <i class="fa-solid fa-wallet absolute right-2 bottom-2 text-neonGreen/10 text-5xl group-hover:text-neonGreen/20 transition"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
             <div class="lg:col-span-8 glass-panel p-5 rounded-2xl flex flex-col">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="font-bold text-white">Custos Totais (Mensal)</h3>
@@ -455,6 +478,14 @@
             };
 
             let kpis = { CELPE:0, ENERGISA:0, ENERGISA_PB:0, EQUATORIAL:0, GLUX:0 };
+            
+            // Variáveis para Orçamento
+            let uniquePeriodos = new Set();
+            let kpiOrcamento = { 
+                CELPE_SPEND: 0, 
+                ENERGISA_SPEND: 0 
+            };
+
             let custosMes = {}; 
             let contratosCount = {};
             let itensCount = {};
@@ -465,7 +496,8 @@
             let allStatus = new Set();
 
             rows.forEach(row => {
-                const data = getVal(row, 0);       
+                const dataRaw = getVal(row, 0); 
+                const dataParts = getRawDateParts(row);      
                 const contrato = getVal(row, 1).toUpperCase(); 
                 const item = getVal(row, 2);       
                 const qtd = parseFloat(getVal(row, 7).replace(',', '.')) || 0; 
@@ -476,13 +508,29 @@
                 const tempoEsperado = parseFloat(getVal(row, 13)); 
                 const tempoReal = parseFloat(getVal(row, 14)); 
 
+                // Identifica meses únicos presentes no filtro para multiplicar o orçamento
+                if(dataParts.month && dataParts.year) {
+                    uniquePeriodos.add(`${dataParts.month}/${dataParts.year}`);
+                }
+
+                // Lógica de Soma dos KPIs (Original)
                 if(contrato.includes("CELPE")) kpis.CELPE += total;
                 else if(contrato.includes("ENERGISA") && contrato.includes("PB")) kpis.ENERGISA_PB += total;
                 else if(contrato.includes("ENERGISA")) kpis.ENERGISA += total;
                 else if(contrato.includes("EQUATORIAL")) kpis.EQUATORIAL += total;
                 else if(contrato.includes("GLUX")) kpis.GLUX += total;
 
-                const mes = parseDateMonth(data);
+                // Lógica Específica para Orçamento (Saldo)
+                // Considera CELPE (assumindo PE como padrão ou todo grupo)
+                if(contrato.includes("CELPE")) {
+                    kpiOrcamento.CELPE_SPEND += total;
+                }
+                // Considera Energisa (MG/RJ) - Excluindo PB para diferenciar
+                if(contrato.includes("ENERGISA") && !contrato.includes("PB")) {
+                    kpiOrcamento.ENERGISA_SPEND += total;
+                }
+
+                const mes = parseDateMonth(dataRaw);
                 if(mes !== 'N/D') {
                     if(!custosMes[mes]) custosMes[mes] = {};
                     if(!custosMes[mes][status]) custosMes[mes][status] = 0;
@@ -493,8 +541,6 @@
                 }
 
                 let cShort = contrato.length > 15 ? contrato.substring(0,15)+"..." : contrato;
-                
-                // MUDANÇA DE LÓGICA AQUI: Soma a quantidade (qtd) em vez de incrementar 1
                 if(cShort) contratosCount[cShort] = (contratosCount[cShort] || 0) + qtd;
 
                 if(item) itensCount[item] = (itensCount[item] || 0) + qtd;
@@ -519,25 +565,53 @@
 
             const updateKpi = (id, val) => {
                 const el = document.getElementById(id);
-                el.setAttribute('data-val', val);
+                if(el) el.setAttribute('data-val', val);
             };
+
             updateKpi('kpi-celpe', kpis.CELPE);
             updateKpi('kpi-energisa', kpis.ENERGISA);
             updateKpi('kpi-energisa-pb', kpis.ENERGISA_PB);
             updateKpi('kpi-equatorial', kpis.EQUATORIAL);
             updateKpi('kpi-glux', kpis.GLUX);
+
+            // --- Lógica de Cálculo do Orçamento Disponível ---
+            // Se nenhum mês for encontrado, assume 1 para não zerar o orçamento base
+            const numMeses = uniquePeriodos.size > 0 ? uniquePeriodos.size : 1; 
+            
+            const budgetCelpe = 3000 * numMeses;
+            const budgetEnergisa = 2400 * numMeses;
+
+            const saldoCelpe = budgetCelpe - kpiOrcamento.CELPE_SPEND;
+            const saldoEnergisa = budgetEnergisa - kpiOrcamento.ENERGISA_SPEND;
+
+            updateKpi('kpi-orcamento-celpe', saldoCelpe);
+            updateKpi('kpi-orcamento-energisa', saldoEnergisa);
+            
+            // Aplica formatação de cores ao saldo (Vermelho se negativo, Verde se positivo)
+            const styleBalance = (id, val) => {
+                const el = document.getElementById(id);
+                if(val < 0) {
+                    el.classList.remove('text-emerald-400');
+                    el.classList.add('text-red-500');
+                } else {
+                    el.classList.remove('text-red-500');
+                    el.classList.add('text-emerald-400');
+                }
+            };
+            styleBalance('kpi-orcamento-celpe', saldoCelpe);
+            styleBalance('kpi-orcamento-energisa', saldoEnergisa);
+
             applyPrivacyToKPIs();
 
+            // Gráficos e restante do código...
             const monthsOrder = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
             const sortedMonths = Array.from(allMonths).sort((a,b) => monthsOrder.indexOf(a) - monthsOrder.indexOf(b));
 
-            // CONFIGURAÇÃO DOS RÓTULOS (DataLabels) - Exibição Limpa
             const commonDataLabels = {
                 color: '#ffffff',
-                font: { weight: 'bold', size: 9 }, // Fonte discreta
-                display: 'auto', // Oculta se sobrepor
+                font: { weight: 'bold', size: 9 }, 
+                display: 'auto',
                 formatter: function(value, context) {
-                    // Oculta se for zero ou se privacidade ativada
                     if (value === 0 || privacyMode) return null;
                     return value;
                 }
@@ -573,7 +647,6 @@
                         anchor: 'end',
                         formatter: function(value) {
                             if (value === 0 || privacyMode) return null;
-                            // Formatação R$ compacta (ex: 1k, 1.5k) se espaço for curto, ou normal
                             return value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL', maximumFractionDigits: 0});
                         }
                     },
@@ -639,7 +712,7 @@
                         ...commonDataLabels,
                         align: 'top',
                         anchor: 'end',
-                        backgroundColor: 'rgba(19, 14, 46, 0.7)', // Fundo escuro para leitura na linha
+                        backgroundColor: 'rgba(19, 14, 46, 0.7)', 
                         borderRadius: 3,
                         padding: 2
                     }
@@ -662,7 +735,7 @@
                             if (val === 0 || privacyMode) return null;
                             let sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
                             let percentage = (val * 100 / sum).toFixed(0) + "%";
-                            return percentage; // Mostra % na pizza
+                            return percentage; 
                         },
                         font: { weight: 'bold', size: 11 }
                     }
@@ -704,7 +777,6 @@
                 plugins: {
                     legend: { labels: { color: '#9ca3af', font:{size:10}, boxWidth: 10 }, position: 'bottom' },
                     tooltip: { backgroundColor: '#1f1642', titleColor: '#fff', bodyColor: '#ccc', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1 },
-                    // Configuração padrão do datalabels (segurança)
                     datalabels: {
                         color: '#fff',
                         display: 'auto',
