@@ -233,8 +233,10 @@
         // Registra o Plugin de DataLabels
         Chart.register(ChartDataLabels);
 
+        // --- CONEXÃO VIA NOVO PROXY (allorigins) ---
         const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR56fYizUrE-Xy-6wJJL0LQspVr6qrJn40fXY3t7w7jUwsDqXwasiIbleMfAfHGtg/pub?output=csv';
-        const PROXY_URL = 'https://corsproxy.io/?' + encodeURIComponent(SHEET_URL);
+        // Alterado para um proxy que contorna os limites do corsproxy
+        const PROXY_URL = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_URL);
 
         let myCharts = {};
         let globalData = [];
@@ -251,6 +253,7 @@
         function fetchData() {
             updateStatus('loading');
             
+            // Usando Fetch com o novo proxy que retorna o texto puro (RAW) do CSV
             fetch(PROXY_URL)
                 .then(response => {
                     if (!response.ok) throw new Error("Erro na rede");
@@ -292,7 +295,7 @@
                 syncEl.innerText = `Sincronizado: ${now}`;
             } else {
                 el.className = "flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 text-red-500 text-xs font-bold border border-red-500/30";
-                el.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>`;
+                el.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${msg || 'ERRO'}`;
             }
         }
 
@@ -326,7 +329,15 @@
 
         function getRawDateParts(row) {
             const dateStr = getVal(row, 0); 
-            const parts = dateStr.split('/');
+            if(!dateStr) return { day: null, month: null, year: null };
+            
+            let parts = [];
+            if(dateStr.includes('T')) {
+                const d = new Date(dateStr);
+                parts = [d.getDate().toString().padStart(2,'0'), (d.getMonth()+1).toString().padStart(2,'0'), d.getFullYear().toString()];
+            } else {
+                parts = dateStr.split('/');
+            }
             return { day: parts[0], month: parts[1], year: parts[2] };
         }
 
@@ -375,6 +386,7 @@
                 selectEl.innerHTML = '<option value="">Todos</option>';
                 const sorted = Array.from(valuesSet).sort();
                 sorted.forEach(val => {
+                    if(!val) return;
                     const opt = document.createElement('option');
                     opt.value = val;
                     opt.text = labelFormatter(val);
@@ -457,7 +469,7 @@
         }
 
         function getVal(row, colIndex) {
-            return row[colIndex] ? row[colIndex].trim() : "";
+            return row[colIndex] !== undefined && row[colIndex] !== null ? String(row[colIndex]).trim() : "";
         }
 
         function processData(rows) {
@@ -468,7 +480,14 @@
             };
             const parseDateMonth = (val) => {
                 if(!val) return 'N/D';
-                const parts = val.split('/'); 
+                let parts = [];
+                if(val.includes('T')) {
+                    const d = new Date(val);
+                    parts = [d.getDate(), d.getMonth()+1, d.getFullYear()];
+                } else {
+                    parts = val.split('/');
+                }
+                
                 if(parts.length >= 2) {
                     const m = parseInt(parts[1]) - 1;
                     const months = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
@@ -479,12 +498,8 @@
 
             let kpis = { CELPE:0, ENERGISA:0, ENERGISA_PB:0, EQUATORIAL:0, GLUX:0 };
             
-            // Variáveis para Orçamento
             let uniquePeriodos = new Set();
-            let kpiOrcamento = { 
-                CELPE_SPEND: 0, 
-                ENERGISA_SPEND: 0 
-            };
+            let kpiOrcamento = { CELPE_SPEND: 0, ENERGISA_SPEND: 0 };
 
             let custosMes = {}; 
             let contratosCount = {};
@@ -508,24 +523,19 @@
                 const tempoEsperado = parseFloat(getVal(row, 13)); 
                 const tempoReal = parseFloat(getVal(row, 14)); 
 
-                // Identifica meses únicos presentes no filtro para multiplicar o orçamento
                 if(dataParts.month && dataParts.year) {
                     uniquePeriodos.add(`${dataParts.month}/${dataParts.year}`);
                 }
 
-                // Lógica de Soma dos KPIs (Original)
                 if(contrato.includes("CELPE")) kpis.CELPE += total;
                 else if(contrato.includes("ENERGISA") && contrato.includes("PB")) kpis.ENERGISA_PB += total;
                 else if(contrato.includes("ENERGISA")) kpis.ENERGISA += total;
                 else if(contrato.includes("EQUATORIAL")) kpis.EQUATORIAL += total;
                 else if(contrato.includes("GLUX")) kpis.GLUX += total;
 
-                // Lógica Específica para Orçamento (Saldo)
-                // Considera CELPE (assumindo PE como padrão ou todo grupo)
                 if(contrato.includes("CELPE")) {
                     kpiOrcamento.CELPE_SPEND += total;
                 }
-                // Considera Energisa (MG/RJ) - Excluindo PB para diferenciar
                 if(contrato.includes("ENERGISA") && !contrato.includes("PB")) {
                     kpiOrcamento.ENERGISA_SPEND += total;
                 }
@@ -574,10 +584,7 @@
             updateKpi('kpi-equatorial', kpis.EQUATORIAL);
             updateKpi('kpi-glux', kpis.GLUX);
 
-            // --- Lógica de Cálculo do Orçamento Disponível ---
-            // Se nenhum mês for encontrado, assume 1 para não zerar o orçamento base
             const numMeses = uniquePeriodos.size > 0 ? uniquePeriodos.size : 1; 
-            
             const budgetCelpe = 3000 * numMeses;
             const budgetEnergisa = 2400 * numMeses;
 
@@ -587,7 +594,6 @@
             updateKpi('kpi-orcamento-celpe', saldoCelpe);
             updateKpi('kpi-orcamento-energisa', saldoEnergisa);
             
-            // Aplica formatação de cores ao saldo (Vermelho se negativo, Verde se positivo)
             const styleBalance = (id, val) => {
                 const el = document.getElementById(id);
                 if(val < 0) {
@@ -603,7 +609,6 @@
 
             applyPrivacyToKPIs();
 
-            // Gráficos e restante do código...
             const monthsOrder = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
             const sortedMonths = Array.from(allMonths).sort((a,b) => monthsOrder.indexOf(a) - monthsOrder.indexOf(b));
 
