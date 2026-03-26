@@ -233,10 +233,8 @@
         // Registra o Plugin de DataLabels
         Chart.register(ChartDataLabels);
 
-        // --- CONEXÃO VIA NOVO PROXY (allorigins) ---
-        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR56fYizUrE-Xy-6wJJL0LQspVr6qrJn40fXY3t7w7jUwsDqXwasiIbleMfAfHGtg/pub?output=csv';
-        // Alterado para um proxy que contorna os limites do corsproxy
-        const PROXY_URL = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(SHEET_URL);
+        // --- CONEXÃO DIRETA COM O GOOGLE SHEETS (SEM PROXY!) ---
+        const BASE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR56fYizUrE-Xy-6wJJL0LQspVr6qrJn40fXY3t7w7jUwsDqXwasiIbleMfAfHGtg/pub?output=csv';
 
         let myCharts = {};
         let globalData = [];
@@ -253,19 +251,26 @@
         function fetchData() {
             updateStatus('loading');
             
-            // Usando Fetch com o novo proxy que retorna o texto puro (RAW) do CSV
-            fetch(PROXY_URL)
+            // Removido o forçador de cache (timestamp) para evitar bloqueios do Google
+            const directUrl = BASE_SHEET_URL;
+            
+            fetch(directUrl)
                 .then(response => {
-                    if (!response.ok) throw new Error("Erro na rede");
+                    if (!response.ok) throw new Error("Erro na rede: " + response.status);
                     return response.text();
                 })
                 .then(csvText => {
+                    if(csvText.trim().toLowerCase().startsWith('<!doctype html') || csvText.includes('<html')) {
+                        console.error("Erro: O Google retornou uma página da web em vez dos dados.", csvText.substring(0, 150));
+                        throw new Error("html_error");
+                    }
+
                     Papa.parse(csvText, {
                         header: false,
                         skipEmptyLines: true,
                         complete: function(results) {
                             if(results.data && results.data.length > 1) {
-                                globalData = results.data.slice(1);
+                                globalData = results.data.slice(1); 
                                 populateFilterOptions(globalData);
                                 applyFilters(); 
                                 updateStatus('success');
@@ -277,7 +282,11 @@
                 })
                 .catch(err => {
                     console.error("Falha na conexão:", err);
-                    updateStatus('error', 'Erro Conexão');
+                    if(err.message === "html_error") {
+                        updateStatus('error', 'Erro Google (Link)');
+                    } else {
+                        updateStatus('error', 'Erro Conexão');
+                    }
                 });
         }
 
